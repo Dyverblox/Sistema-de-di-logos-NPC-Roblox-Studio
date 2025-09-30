@@ -1,0 +1,206 @@
+-- ======================================================
+--                                         MÓDULO DE DIALOGOS  
+-- RUTA: ReplicatedStorage/Dialogos                                   AUTOR: "Dyverblox"                   
+-- SÍGUEME EN : INSTAGRAM: @Dyverblox  YOUTUBE: @Dyverblox
+-- ======================================================
+
+local Dialogos = {}
+
+-- ======================================================
+--  UTILS (Funciones comunes reutilizables)
+-- ======================================================
+Dialogos.Utils = {}
+
+--- Cambiar color temporalmente y restaurar
+function Dialogos.Utils.restorePartColor(part, newColor, delaySeconds)
+	if not (part and part:IsA("BasePart")) then return end
+	local original = part.BrickColor
+	part.BrickColor = newColor
+
+	task.delay(delaySeconds, function()
+		if part.Parent then
+			part.BrickColor = original
+		end
+	end)
+end
+
+--- Matar NPC o jugador tras X segundos
+function Dialogos.Utils.killAfter(character, seconds, onDeath)
+	local hum = character and character:FindFirstChild("Humanoid")
+	if hum then
+		task.delay(seconds, function()
+			if character.Parent and hum.Health > 0 then
+				hum.Health = 0
+				if onDeath then
+					onDeath()
+				end
+			end
+		end)
+	end
+end
+
+--- Teletransportar personaje a un CFrame
+function Dialogos.Utils.teleportTo(character, cframe)
+	if character and character:FindFirstChild("HumanoidRootPart") then
+		character.HumanoidRootPart.CFrame = cframe
+	end
+end
+
+-- ======================================================
+--  DEFINICIÓN DE NPCs
+-- ======================================================
+Dialogos.Npcs = {
+
+	["ROKY"] = {
+		-- Solo se necesita la cara enojada, la normal se detecta del Decal
+		ImagenEnojado = "122839040895124",
+
+		Dialogos = {
+			[1] = "¿Te atreves hablar con una roca?" ,
+			[2] = "¡No soy feo!",
+			[3] = "¿Lo dices encerio? ¡Gracias!",
+		},
+
+		--texto(cambia texto del botón), color(cambia color del botón)
+		Respuestas = {
+			["Insulto"]   = { texto = "Eres feo",   color = Color3.fromRGB(255,0,0) }, 
+			["Responder"] = { texto = "Si por que eres muy cool",   color = Color3.fromRGB(38,255,0) },
+			["Ignorar"]   = { texto = "Ignorar",    color = Color3.fromRGB(255,255,255) },
+		},
+
+		Acciones = {
+			["Insulto"] = function(player, character)
+				local nombreNPC = "ROKY"
+
+				-- ================================
+				-- ESPERAR NPC COMPLETO
+				-- ================================
+				local npc = workspace:WaitForChild(nombreNPC, 5)
+				if not npc then return end
+
+				local targetPart
+				local face
+
+				if npc:IsA("Model") then
+					local cabeza = npc:WaitForChild("Head", 5) or npc:WaitForChild("HumanoidRootPart", 5)
+					if cabeza then
+						targetPart = cabeza
+						face = cabeza:FindFirstChildWhichIsA("Decal")
+					end
+				elseif npc:IsA("BasePart") then
+					targetPart = npc
+					face = npc:FindFirstChildWhichIsA("Decal")
+				end
+
+				if not targetPart then return end
+
+				-- ================================
+				-- CAMBIAR COLOR Y CARA TEMPORAL
+				-- ================================
+				if face and not face:GetAttribute("OriginalTexture") then
+					face:SetAttribute("OriginalTexture", face.Texture)
+				end
+
+				local originalFace = face and face:GetAttribute("OriginalTexture")
+				Dialogos.Utils.restorePartColor(targetPart, BrickColor.new("Really red"), 4)
+
+				if face then
+					face.Texture = "rbxassetid://" .. Dialogos.Npcs[nombreNPC].ImagenEnojado
+					task.delay(4, function()
+						if face and face.Parent and originalFace then
+							face.Texture = originalFace
+						end
+					end)
+				end
+
+				-- ================================
+				-- INMOVILIZAR JUGADOR
+				-- ================================
+				local hum = character and character:FindFirstChild("Humanoid")
+				local hrp = character and character:FindFirstChild("HumanoidRootPart")
+				if hum then
+					hum.PlatformStand = true  -- Bloquea movimiento y salto de manera segura
+				end
+
+				-- ================================
+				-- ESPADA EN WORKSPACE
+				-- ================================
+				local sword = workspace:FindFirstChild("Espada")
+				if sword and sword:IsA("BasePart") then
+					sword.Transparency = 0
+					sword.CanCollide = true
+				end
+
+				-- ================================
+				-- MATAR JUGADOR DESPUÉS DE 2s
+				-- ================================
+				Dialogos.Utils.killAfter(character, 2, function()
+					-- Restaurar movimiento
+					if hum then hum.PlatformStand = false end
+
+					-- Esconder espada
+					if sword then
+						sword.Transparency = 1
+						sword.CanCollide = false
+					end
+
+				end)
+			
+			end,
+			
+			["Responder"] = function(player, character)
+				-- POSICIÓN DE DESTINO 
+				local destino = workspace:WaitForChild("aparecer") 
+				if not destino then return end
+
+				-- Teletransportar tras 2 segundos
+				task.delay(2, function()
+					Dialogos.Utils.teleportTo(character, destino.CFrame)
+				end)
+			end,
+		
+
+		},
+
+		Opciones = {
+			[1] = {
+				{ respuestaKey = "Insulto", nextId = 2 },    --OPCIÓN 1
+				{ respuestaKey = "Responder",nextId=3},              --OPCIÓN 2
+				{ respuestaKey = "Ignorar"}, --OPCIÓN 3
+			},
+			[2] = { },
+			[3] = { },
+		}
+	}, --CIERRE NPC ROKY
+
+
+	
+}
+
+-- ======================================================
+--  API PRINCIPAL
+-- ======================================================
+function Dialogos:GetDialogo(npcName, id)
+	local npcData = self.Npcs[npcName]
+	if not npcData then return nil end
+
+	local texto = npcData.Dialogos[id]
+	if not texto then return nil end
+
+	local opciones = {}
+	for _, opt in ipairs(npcData.Opciones[id] or {}) do
+		local resp = npcData.Respuestas[opt.respuestaKey]
+		if resp then
+			table.insert(opciones, {
+				texto  = resp.texto,
+				color  = resp.color,
+				accion = npcData.Acciones[opt.respuestaKey],
+				nextId = opt.nextId
+			})
+		end
+	end
+
+	return { npc = npcName, texto = texto, opciones = opciones }
+end
+
+return Dialogos

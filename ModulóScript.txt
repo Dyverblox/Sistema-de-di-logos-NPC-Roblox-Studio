@@ -1,0 +1,162 @@
+-- ======================================================
+--                                         MÓDULO DE DIALOGOS  
+-- RUTA: ReplicatedStorage/Dialogos                                   AUTOR: "Dyverblox"                   
+-- SÍGUEME EN : INSTAGRAM: @Dyverblox  YOUTUBE: @Dyverblox
+-- ======================================================
+
+local Dialogos = {}
+
+-- ======================================================
+--  UTILS (Funciones comunes reutilizables)
+-- ======================================================
+Dialogos.Utils = {}
+
+--- Cambiar color temporalmente y restaurar
+function Dialogos.Utils.restorePartColor(part, newColor, delaySeconds)
+	if not (part and part:IsA("BasePart")) then return end
+	local original = part.BrickColor
+	part.BrickColor = newColor
+
+	task.delay(delaySeconds, function()
+		if part.Parent then
+			part.BrickColor = original
+		end
+	end)
+end
+
+--- Matar NPC o jugador tras X segundos
+function Dialogos.Utils.killAfter(character, seconds, onDeath)
+	local hum = character and character:FindFirstChild("Humanoid")
+	if hum then
+		task.delay(seconds, function()
+			if character.Parent and hum.Health > 0 then
+				hum.Health = 0
+				if onDeath then
+					onDeath()
+				end
+			end
+		end)
+	end
+end
+
+-- ======================================================
+--  DEFINICIÓN DE NPCs
+-- ======================================================
+Dialogos.Npcs = {
+
+	["NPC1"] = {
+		-- Solo se necesita la cara enojada, la normal se detecta del Decal
+		ImagenEnojado = "115931719157361",
+
+		Dialogos = {
+			[1] = "¡Hola aventurero!",
+			[2] = "¡No soy feo!",
+			[3] = "Ten un buen día",
+		},
+
+		--texto(cambia texto del botón), color(cambia color del botón)
+		Respuestas = {
+			["Insulto"]   = { texto = "Eres feo",   color = Color3.fromRGB(255,0,0) }, 
+			["Responder"] = { texto = "Hola NPC",   color = Color3.fromRGB(38,255,0) },
+			["Ignorar"]   = { texto = "Ignorar",    color = Color3.fromRGB(255,255,255) },
+		},
+
+		Acciones = {
+			["Insulto"] = function(player, character)
+				local nombreNPC= "NPC1"
+				local npc = workspace:FindFirstChild(nombreNPC)
+				if not npc then return end
+
+				local targetPart
+				local face
+
+				-- Caso 1: NPC es un modelo con Head
+				if npc:IsA("Model") then
+					local cabeza = npc:FindFirstChild("Head")
+					if cabeza and cabeza:IsA("BasePart") then
+						targetPart = cabeza
+						face = cabeza:FindFirstChildWhichIsA("Decal")
+					end
+					-- Caso 2: NPC es solo una Part
+				elseif npc:IsA("BasePart") then
+					targetPart = npc
+					face = npc:FindFirstChildWhichIsA("Decal")
+				end
+
+				if not targetPart then return end
+
+				-- Guardar cara original si aún no se ha guardado
+				if face and not face:GetAttribute("OriginalTexture") then
+					face:SetAttribute("OriginalTexture", face.Texture)
+				end
+
+				-- Cambiar color temporalmente y programar restauración de cara también
+				local originalFace = face and face:GetAttribute("OriginalTexture")
+				Dialogos.Utils.restorePartColor(targetPart, BrickColor.new("Really red"), 4)
+
+				-- Cambiar cara a enojado
+				if face then
+					face.Texture = "rbxassetid://" .. Dialogos.Npcs[nombreNPC].ImagenEnojado
+
+					-- Al mismo tiempo que se restaura el color, restaurar la cara
+					task.delay(4, function()
+						if face and face.Parent and originalFace then
+							face.Texture = originalFace
+						end
+					end)
+				end
+
+				-- Matar al jugador después de 2 segundos
+				Dialogos.Utils.killAfter(character, 2)
+			end,
+		},
+
+		Opciones = {
+			[1] = {
+				{ respuestaKey = "Insulto", nextId = 2 },    --OPCIÓN 1
+				{ respuestaKey = "Responder",nextId = 3},              --OPCIÓN 2
+				{ respuestaKey = "Ignorar"}, --OPCIÓN 3
+			},
+			[2] = { },
+			[3] = {
+				{ respuestaKey = "Ignorar" }, --OPCIÓN 1
+			},
+		}
+	},
+
+	["NPC2"] = {
+
+		Dialogos = {},
+		Respuestas = {},
+		Acciones = {},
+		Opciones = {},
+	},
+}
+
+-- ======================================================
+--  API PRINCIPAL
+-- ======================================================
+function Dialogos:GetDialogo(npcName, id)
+	local npcData = self.Npcs[npcName]
+	if not npcData then return nil end
+
+	local texto = npcData.Dialogos[id]
+	if not texto then return nil end
+
+	local opciones = {}
+	for _, opt in ipairs(npcData.Opciones[id] or {}) do
+		local resp = npcData.Respuestas[opt.respuestaKey]
+		if resp then
+			table.insert(opciones, {
+				texto  = resp.texto,
+				color  = resp.color,
+				accion = npcData.Acciones[opt.respuestaKey],
+				nextId = opt.nextId
+			})
+		end
+	end
+
+	return { npc = npcName, texto = texto, opciones = opciones }
+end
+
+return Dialogos
