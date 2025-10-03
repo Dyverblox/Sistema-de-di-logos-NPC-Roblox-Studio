@@ -246,6 +246,7 @@ local function escribirTexto(text, interval, onComplete)
 	Texto.Text = ""
 
 	if typeSound then
+		typeSound.Looped = true
 		typeSound:Play()
 	end
 
@@ -257,6 +258,7 @@ local function escribirTexto(text, interval, onComplete)
 		end
 
 		if typeSound then
+			typeSound.Looped = false
 			typeSound:Stop()
 		end
 
