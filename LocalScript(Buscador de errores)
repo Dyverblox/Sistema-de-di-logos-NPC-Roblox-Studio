@@ -1,0 +1,361 @@
+-- ======================================================
+-- INTERFAZ DE DIÁLOGO     
+-- RUTA: StarterGui/ScreenGuiNPC/localScript     AUTOR: "Dyverblox"   
+-- Sirve para encontrar errores al momento de ejecutar el juego. Se debe usar como reemplazo del LocalScript original.
+-- Todo el sistema funciona igual solo incluye  mensajes de depuración inteligentes, organizados y visibles en el Output.
+-- ======================================================
+
+
+-- ========================================================
+-- CONFIGURACIÓN DE SERVICIOS Y VARIABLES PRINCIPALES
+-- ========================================================
+local Players = game:GetService("Players") 
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+-- ========================================================
+-- SONIDO Y GUI
+-- ========================================================
+local typeSound = script.Parent:FindFirstChildWhichIsA("Sound")
+
+local DialogGui = script.Parent
+local Frame = DialogGui:FindFirstChild("Frame")
+local Texto = Frame and Frame:FindFirstChild("TextLabel")
+local OpcionesFrame = Frame
+local NombreFrame = Frame and Frame:FindFirstChild("Nombre")
+local NombreLabel = NombreFrame and NombreFrame:FindFirstChild("TextLabel")
+
+-- ========================================================
+-- AVISOS DE VERIFICACIÓN DE GUI
+-- ========================================================
+if not Frame then warn("[DIALOGO] No se encontró 'Frame' en el GUI.") end
+if not Texto then warn("[DIALOGO] No se encontró el TextLabel del texto del NPC.") end
+if not OpcionesFrame then warn("[DIALOGO] No existe el Frame de opciones.") end
+if not NombreFrame then warn("[DIALOGO] No se encontró el Frame del nombre del NPC.") end
+if not NombreLabel then warn("[DIALOGO] No se encontró el TextLabel del nombre.") end
+
+local FrameOriginalSize = Frame and Frame.Size or UDim2.new(0,300,0,150)
+local NombreFrameOriginalSize = NombreFrame and NombreFrame.Size or UDim2.new(0,200,0,40)
+
+-- ========================================================
+-- NPC Y ZONA
+-- ========================================================
+local nombre = "NPC1"
+
+local npc, humanoid, torsoOrPart, prompt
+
+-- ========================================================
+-- FUNCIÓN ROBUSTA PARA ESPERAR NPC Y PROXIMITYPROMPT
+-- ========================================================
+local function esperarNPCCompleto(nombre, maxIntentos)
+	local npcEncontrado, humanoidEncontrado, torsoEncontrado, promptEncontrado
+	local intentos = 0
+
+	while intentos < maxIntentos do
+		npcEncontrado = workspace:FindFirstChild(nombre)
+		if not npcEncontrado then
+			warn("[DIALOGO] NPC '"..nombre.."' no encontrado (intento "..intentos..")")
+		else
+			if npcEncontrado:IsA("Model") then
+				humanoidEncontrado = npcEncontrado:FindFirstChildOfClass("Humanoid")
+				if not humanoidEncontrado then
+					warn("[DIALOGO] NPC encontrado pero sin Humanoid.")
+				end
+
+				torsoEncontrado = npcEncontrado:FindFirstChild("UpperTorso") 
+					or npcEncontrado:FindFirstChild("Torso") 
+					or npcEncontrado:FindFirstChild("HumanoidRootPart")
+
+				if not torsoEncontrado then
+					warn("[DIALOGO] NPC encontrado pero sin torso compatible.")
+				end
+
+				if torsoEncontrado then
+					local att = torsoEncontrado:FindFirstChild("BodyFrontAttachment")
+					if att then
+						promptEncontrado = att:FindFirstChildOfClass("ProximityPrompt")
+						if not promptEncontrado then
+							warn("[DIALOGO] No se encontró ProximityPrompt dentro del Attachment.")
+						end
+					else
+						warn("[DIALOGO] No existe BodyFrontAttachment en el torso.")
+					end
+				end
+
+			elseif npcEncontrado:IsA("BasePart") then
+				torsoEncontrado = npcEncontrado
+				promptEncontrado = npcEncontrado:FindFirstChildOfClass("ProximityPrompt")
+				if not promptEncontrado then
+					warn("[DIALOGO] Parte encontrada pero sin ProximityPrompt.")
+				end
+			end
+		end
+
+		if npcEncontrado and torsoEncontrado and (humanoidEncontrado or npcEncontrado:IsA("BasePart")) and promptEncontrado then
+			print("[DIALOGO] NPC '"..nombre.."' cargado correctamente.")
+			return npcEncontrado, humanoidEncontrado, torsoEncontrado, promptEncontrado
+		end
+
+		intentos += 1
+		task.wait(0.5)
+	end
+
+	warn("[DIALOGO] No se pudo cargar completamente el NPC '"..nombre.."'. Faltan partes críticas.")
+	return nil, nil, nil, nil
+end
+
+npc, humanoid, torsoOrPart, prompt = esperarNPCCompleto(nombre, 10)
+
+local zona = workspace:FindFirstChild(nombre.."_Zona")
+if not zona then
+	warn("[DIALOGO] No existe zona para este NPC (opcional): "..nombre.."_Zona")
+else
+	print("[DIALOGO] Zona detectada:", zona.Name)
+end
+
+
+-- ========================================================
+-- MÓDULO DE DIÁLOGOS
+-- ========================================================
+local DialogosModule = require(ReplicatedStorage:WaitForChild("Dialogos"))
+if not DialogosModule.GetDialogo then
+	error("[DIALOGO] El módulo 'Dialogos' no contiene la función GetDialogo.")
+end
+
+local conexiones = {}
+local currentCharacter = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+
+local TweenInfoConfig = TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+
+local dialogoAbierto = false
+local textoCancelado = false
+
+-- Inicializar botones invisibles
+local botonesEncontrados = 0
+for _, boton in ipairs(OpcionesFrame:GetChildren()) do
+	if boton:IsA("TextButton") then
+		botonesEncontrados += 1
+		boton.Visible = false
+		boton.Text = ""
+	end
+end
+if botonesEncontrados == 0 then
+	warn("[DIALOGO] No se encontraron botones de opciones (Opcion1, Opcion2, ...).")
+end
+
+
+-- ========================================================
+-- CONFIGURACIÓN DEL MODO DE APERTURA
+-- ========================================================
+local modoApertura = "esquina"
+
+
+-- ========================================================
+-- FUNCIONES DE ABRIR Y CERRAR
+-- ========================================================
+local function abrirDialogo()
+	if dialogoAbierto then return end
+	dialogoAbierto = true
+
+	if prompt then prompt.Enabled = false end
+
+	Texto.Text = ""
+	NombreLabel.Text = nombre
+
+	if modoApertura ~= "ninguno" then
+		Frame.Size = UDim2.new(0,0,0,0)
+		Frame.Visible = true
+		NombreFrame.Visible = false
+
+		local t = TweenService:Create(Frame, TweenInfoConfig, {Size = FrameOriginalSize})
+		t:Play()
+		t.Completed:Wait()
+
+		NombreFrame.Size = NombreFrameOriginalSize
+		NombreFrame.Visible = true
+	else
+		Frame.Visible = true
+		NombreFrame.Visible = true
+	end
+end
+
+
+local function cerrarDialogo()
+	if not dialogoAbierto then return end
+	dialogoAbierto = false
+
+	textoCancelado = true
+	Texto.Text = ""
+
+	for _, b in ipairs(OpcionesFrame:GetChildren()) do
+		if b:IsA("TextButton") then
+			b.Visible = false
+		end
+	end
+
+	if modoApertura ~= "ninguno" then
+		NombreFrame.Visible = false
+		local t = TweenService:Create(Frame, TweenInfoConfig, {Size = UDim2.new(0,0,0,0)})
+		t:Play()
+		t.Completed:Wait()
+		Frame.Visible = false
+	else
+		Frame.Visible = false
+		NombreFrame.Visible = false
+	end
+
+	for _, c in ipairs(conexiones) do
+		if c.Connected then c:Disconnect() end
+	end
+	table.clear(conexiones)
+
+	if prompt then
+		task.delay(1.5, function()
+			if not dialogoAbierto and prompt and torsoOrPart.Parent then
+				prompt.Enabled = true
+			end
+		end)
+	end
+end
+
+
+-- ========================================================
+-- ESCRIBIR TEXTO
+-- ========================================================
+local function escribirTexto(text, interval, onComplete)
+	textoCancelado = true
+	task.wait()
+	textoCancelado = false
+
+	Texto.Text = ""
+
+	if typeSound then
+		typeSound.Looped = true
+		typeSound:Play()
+	end
+
+	task.spawn(function()
+		for letter in string.gmatch(text, ".") do
+			if textoCancelado then break end
+			Texto.Text ..= letter
+			task.wait(interval)
+		end
+
+		if typeSound then
+			typeSound.Looped = false
+			typeSound:Stop()
+		end
+
+		if onComplete and not textoCancelado then
+			onComplete()
+		end
+	end)
+end
+
+
+-- ========================================================
+-- MOSTRAR DIÁLOGO
+-- ========================================================
+local function mostrarDialogo(npcName, dialogId)
+	local data = DialogosModule:GetDialogo(npcName, dialogId)
+
+	if not data then
+		warn("[DIALOGO] No se encontró el diálogo solicitado. NPC="..npcName..", ID="..dialogId)
+		return
+	end
+
+	if not data.texto then
+		warn("[DIALOGO] El diálogo no contiene texto. NPC="..npcName..", ID="..dialogId)
+	end
+
+	if not data.opciones or #data.opciones == 0 then
+		warn("[DIALOGO] El diálogo no contiene opciones. NPC="..npcName..", ID="..dialogId)
+	end
+
+	cerrarDialogo()
+	abrirDialogo()
+
+	escribirTexto(data.texto, 0.02, function()
+		for index, opcion in ipairs(data.opciones) do
+			local boton = OpcionesFrame:FindFirstChild("Opcion"..index)
+			if not boton then
+				warn("[DIALOGO] No existe el botón Opcion"..index)
+			else
+				boton.Text = opcion.texto or "Sin texto"
+				boton.BackgroundColor3 = opcion.color or Color3.new(1,1,1)
+				boton.Visible = true
+
+				local con = boton.MouseButton1Click:Connect(function()
+					cerrarDialogo()
+
+					if opcion.accion then
+						opcion.accion(LocalPlayer, currentCharacter)
+					end
+
+					if opcion.nextId then
+						mostrarDialogo(npcName, opcion.nextId)
+					end
+				end)
+				table.insert(conexiones, con)
+			end
+		end
+	end)
+end
+
+
+-- ========================================================
+-- EVENTOS
+-- ========================================================
+if prompt then
+	prompt.Triggered:Connect(function(player)
+		if player == LocalPlayer then
+			if not torsoOrPart then warn("[DIALOGO] El prompt se activó pero no existe torsoOrPart.") end
+			if not npc then warn("[DIALOGO] El prompt se activó pero NPC es nil.") end
+			mostrarDialogo(nombre, 1)
+		end
+	end)
+else
+	warn("[DIALOGO] El NPC no tiene ProximityPrompt.")
+end
+
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+	currentCharacter = newChar
+	local humanoid = newChar:WaitForChild("Humanoid")
+	humanoid.Died:Connect(function()
+		cerrarDialogo()
+	end)
+end)
+
+if currentCharacter then
+	local humanoid = currentCharacter:FindFirstChild("Humanoid")
+	if humanoid then
+		humanoid.Died:Connect(function()
+			cerrarDialogo()
+		end)
+	end
+end
+
+-- ========================================================
+-- ZONA CON CONTADOR DE PARTES
+-- ========================================================
+if zona and zona:IsA("BasePart") then
+	local partesDentro = 0
+
+	zona.Touched:Connect(function(part)
+		if part:IsDescendantOf(currentCharacter) then
+			partesDentro += 1
+		end
+	end)
+
+	zona.TouchEnded:Connect(function(part)
+		if part:IsDescendantOf(currentCharacter) then
+			partesDentro -= 1
+			if partesDentro <= 0 then
+				partesDentro = 0
+				cerrarDialogo()
+			end
+		end
+	end)
+end
