@@ -70,43 +70,37 @@ end
 -- ========================================================
 -- ESPERAR NPC Y SU PROXIMITYPROMPT (máx 10 intentos)
 -- ========================================================
+
 local function esperarNPCCompleto(nombre, maxIntentos)
-	local npcEncontrado
-	local humanoid
-	local torso
-	local promptEncontrado
 	local intentos = 0
 
 	while intentos < maxIntentos do
-		npcEncontrado = workspace:FindFirstChild(nombre)
-		if npcEncontrado and npcEncontrado:IsA("Model") then
-			humanoid = npcEncontrado:FindFirstChildOfClass("Humanoid")
-			torso = npcEncontrado:FindFirstChild("UpperTorso") 
-				or npcEncontrado:FindFirstChild("Torso") 
-				or npcEncontrado:FindFirstChild("HumanoidRootPart")
-			if humanoid and torso then
-				local attachment = torso:FindFirstChild("BodyFrontAttachment")
-				if attachment then
-					promptEncontrado = attachment:FindFirstChildOfClass("ProximityPrompt")
-				end
-			end
-		elseif npcEncontrado and npcEncontrado:IsA("BasePart") then
-			torso = npcEncontrado
-			promptEncontrado = npcEncontrado:FindFirstChildOfClass("ProximityPrompt")
-		end
+		local npc = workspace:FindFirstChild(nombre)
+		if npc then
+			-- Buscar ProximityPrompt en cualquier lugar del NPC
+			local prompt = npc:FindFirstChildWhichIsA("ProximityPrompt", true)
 
-		if npcEncontrado and torso and (humanoid or npcEncontrado:IsA("BasePart")) and promptEncontrado then
-			return npcEncontrado, humanoid, torso, promptEncontrado
+			-- Buscar parte base válida
+			local torso = npc:FindFirstChild("HumanoidRootPart")
+				or npc:FindFirstChild("UpperTorso")
+				or npc:FindFirstChild("Torso")
+				or npc:FindFirstChildWhichIsA("BasePart")
+
+			local humanoid = npc:FindFirstChildOfClass("Humanoid")
+
+			if prompt and torso then
+				return npc, humanoid, torso, prompt
+			end
 		end
 
 		intentos += 1
 		task.wait(0.5)
 	end
 
-	-- Si no lo encuentra tras los intentos
-	warn("No se pudo encontrar completamente al NPC '" .. nombre .. "' después de " .. maxIntentos .. " intentos")
+	warn("No se pudo encontrar completamente al NPC '" .. nombre .. "'")
 	return nil, nil, nil, nil
 end
+
 
 -- Uso de la función con 10 intentos
 npc, humanoid, torsoOrPart, prompt = esperarNPCCompleto(nombre, 10)
